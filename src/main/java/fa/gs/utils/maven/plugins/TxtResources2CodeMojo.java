@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
@@ -24,11 +25,11 @@ public class TxtResources2CodeMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project}")
     private MavenProject project;
 
-    @Parameter(property = "outputDirectory", defaultValue = "${project.build.directory}/generated-sources/text-messages")
-    private File outputDirectory;
+    @Parameter(property = "outputDirectory", defaultValue = "text-messages")
+    private String outputDirectoryPath;
 
-    @Parameter(property = "ingestFrom", defaultValue = "${project.build.resources[0].directory}")
-    private File ingestFrom;
+    @Parameter(property = "inputDirectory", defaultValue = "${project.build.resources[0].directory}")
+    private String inputDirectoryPath;
 
     @Parameter(property = "packageName", defaultValue = "fa.gs.resources.text")
     private String packageName;
@@ -39,26 +40,28 @@ public class TxtResources2CodeMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-        // Verificar carpeta de salida.
+        // Carpeta de salida.
+        File outputDirectory = Paths.get(project.getBasedir().getAbsolutePath(), "target", "generated-sources", outputDirectoryPath).toFile();
         try {
-            if (FileUtils.fileExists(outputDirectory.getAbsolutePath())) {
-                FileUtils.cleanDirectory(outputDirectory);
-            } else {
+            if (!FileUtils.fileExists(outputDirectory.getAbsolutePath())) {
                 FileUtils.forceMkdir(outputDirectory);
+            } else {
+                FileUtils.cleanDirectory(outputDirectoryPath);
             }
         } catch (IOException ex) {
-            throw new MojoFailureException("No se pudo procesar la carpeta de salida.", (Throwable) ex);
-        }
-
-        // Verificar carpeta de entrada.
-        if (!FileUtils.fileExists(ingestFrom.getAbsolutePath())) {
-            throw new MojoFailureException(String.format("Carpeta de entrada '%s' no existe.", ingestFrom.getAbsolutePath()));
+            throw new MojoFailureException("No se pudo crear la carpeta de salida.", (Throwable) ex);
         }
 
         // Procesar archivos de mensajes.
         final Map<String, String> msgs = new HashMap<>();
         try {
-            final List<File> files = (List<File>) FileUtils.getFiles(ingestFrom, "**/*.msg", null);
+            // Listar archivos.
+            List<File> files = new LinkedList<>();
+            if (FileUtils.fileExists(inputDirectoryPath)) {
+                File inputDirectory = new File(inputDirectoryPath);
+                files = FileUtils.getFiles(inputDirectory, "**/*.msg", null);
+            }
+            // Extraer mensajes.
             if (files != null && !files.isEmpty()) {
                 for (final File file : files) {
                     getLog().info((CharSequence) ("Procesando: " + file.getAbsolutePath()));
@@ -71,8 +74,8 @@ public class TxtResources2CodeMojo extends AbstractMojo {
 
         // Generar mensajes en forma de código fuente.
         try {
-            dump(msgs);
-            project.addCompileSourceRoot(outputDirectory.getPath());
+            dump(msgs, outputDirectory.getAbsolutePath());
+            project.addCompileSourceRoot(outputDirectory.getAbsolutePath());
         } catch (IOException ex) {
             throw new MojoFailureException("No se pudo generar el código fuente de salida.", ex);
         }
@@ -92,9 +95,9 @@ public class TxtResources2CodeMojo extends AbstractMojo {
         }
     }
 
-    private void dump(final Map<String, String> msgs) throws IOException {
+    private void dump(final Map<String, String> msgs, String path) throws IOException {
         final String className = "TextMessages";
-        final File target = Paths.get(outputDirectory.getAbsolutePath(), className + ".java").toFile();
+        final File target = Paths.get(path, className + ".java").toFile();
         FileUtils.fileWrite(target, "");
         FileUtils.fileAppend(target.getAbsolutePath(), String.format("package %s;\n", packageName));
         FileUtils.fileAppend(target.getAbsolutePath(), String.format("import java.text.MessageFormat;\n", new Object[0]));
